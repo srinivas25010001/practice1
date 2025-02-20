@@ -39,28 +39,37 @@ spec:
     nodePort: 31110
 
 
-FROM httpd:2.4 AS apache
+FROM debian:bullseye AS apache
 
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
-    apt-get install -y nodejs && \
-    apt-get clean
+# Install Apache, Node.js, and dependencies
+RUN apt-get update && apt-get install -y \
+    apache2 apache2-utils curl \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && apt-get clean
 
+# Set working directory
 WORKDIR /usr/src/app
 
+# Copy package.json and install dependencies
 COPY package.json ./
 RUN npm install --only=production && npm cache clean --force
 
+# Copy application files
 COPY . .
 
+# Enable Apache modules
+RUN a2enmod proxy proxy_http rewrite
+
+# Copy custom Apache configuration
+COPY httpd.conf /etc/apache2/sites-available/000-default.conf
+
+# Expose port 80 for Apache
 EXPOSE 80
 
-RUN apt-get update && apt-get install -y apache2-utils && \
-    a2enmod proxy proxy_http rewrite
+# Start Node.js and Apache
+CMD ["sh", "-c", "node /usr/src/app/server.js & apachectl -D FOREGROUND"]
 
-COPY httpd.conf /usr/local/apache2/conf/httpd.conf
-
-CMD ["sh", "-c", "node /usr/src/app/server.js & httpd -D FOREGROUND"]
 
 
 
@@ -87,6 +96,8 @@ ProxyPreserveHost On
     ProxyPass "/" "http://localhost:3000/"
     ProxyPassReverse "/" "http://localhost:3000/"
     
-    ErrorLog /usr/local/apache2/logs/error.log
-    CustomLog /usr/local/apache2/logs/access.log combined
+    ErrorLog /var/log/apache2/error.log
+    CustomLog /var/log/apache2/access.log combined
 </VirtualHost>
+
+
